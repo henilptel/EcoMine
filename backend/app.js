@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 require('./config/database'); // Initialize database
 const userRoutes = require('./routes/users');
+const mineRoutes = require('./routes/mines');
+const emissionRoutes = require('./routes/emissions');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -12,6 +14,8 @@ app.use(express.json());
 
 // Routes
 app.use('/api/users', userRoutes);
+app.use('/api/mines', mineRoutes);
+app.use('/api/emissions', emissionRoutes);
 
 // Health check route
 app.get('/', (req, res) => {
