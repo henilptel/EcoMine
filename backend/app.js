@@ -1,27 +1,29 @@
-const express = require('express'); 
-const session = require('express-session');
-const passport = require('passport');
+const express = require('express');
+const cors = require('cors');
+require('./config/database'); // Initialize database
+const userRoutes = require('./routes/users');
 
 const app = express();
-const PORT = 3000;
-app.use(express.json());    
-app.use(session({
-    secret:"coal",
-    saveUninitialized:false,
-    resave:false,
-    cookie:{
-        maxAge:60000*60
-    }
-}))
+const PORT = process.env.PORT || 3000;
 
-app.use(passport.initialize());
-app.use(passport.session());
+// Middleware
+app.use(cors());
+app.use(express.json());
 
+// Routes
+app.use('/api/users', userRoutes);
 
+// Health check route
+app.get('/', (req, res) => {
+    res.json({ status: 'Server is running' });
+});
 
-app.get('/',(req,res) => {
-    res.send("HELLO");
-})
+// Error handling middleware
+app.use((err, req, res, next) => {
+    console.error(err.stack);
+    res.status(500).json({ error: 'Something went wrong!' });
+});
+
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
-})
+});
