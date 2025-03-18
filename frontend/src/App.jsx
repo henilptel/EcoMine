@@ -28,7 +28,7 @@ function App() {
           } />
           
           <Route path="/data-entry" element={
-            <ProtectedRoute roles={['analyst', 'environmental_officer']}>
+            <ProtectedRoute roles={['analyst', 'environmental_officer', 'admin']}>
               <DataEntry />
             </ProtectedRoute>
           } />

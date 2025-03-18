@@ -1,10 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { mineService, emissionService } from '../services/mine';
+import { miningOperationService } from '../services/mining-operation';
+import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
+
+// Constants for emission calculations
+const COAL_DENSITY_FACTOR = 1.5; // tons per cubic meter
+const METHANE_EMISSION_FACTOR = 0.02; // cubic meters per ton of material
+const WASTE_EMISSION_FACTOR = 0.05; // tons CO2e per ton of waste
 
 export default function DataEntry() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [mines, setMines] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [calculating, setCalculating] = useState(false);
+  const [calculatedEmissions, setCalculatedEmissions] = useState(null);
+  
   const [formData, setFormData] = useState({
+    mine_id: '',
     date: '',
     excavationData: {
       materialVolume: '',
@@ -52,11 +67,83 @@ export default function DataEntry() {
     }
   };
 
-  const handleSubmit = (e) => {
+  useEffect(() => {
+    loadMines();
+  }, []);
+
+  const loadMines = async () => {
+    try {
+      const data = await mineService.getMines();
+      setMines(data);
+    } catch (error) {
+      toast.error('Failed to load mines');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const calculateEmissionsFromOperations = async (data) => {
+    const emissionData = {
+      coal_output: data.excavationData.materialVolume * COAL_DENSITY_FACTOR,
+      electricity_usage: parseFloat(data.equipmentData.energyConsumption) + 
+                        parseFloat(data.energyConsumption.electricity),
+      fuel_consumption: parseFloat(data.excavationData.fuelConsumption) + 
+                       parseFloat(data.transportationData.fuelConsumption) + 
+                       parseFloat(data.energyConsumption.diesel) + 
+                       parseFloat(data.energyConsumption.other),
+      methane_leaks: data.excavationData.materialVolume * METHANE_EMISSION_FACTOR,
+      stockpile_emissions: parseFloat(data.wasteManagement.wasteRock) * WASTE_EMISSION_FACTOR
+    };
+
+    return await emissionService.calculateEmissions(emissionData);
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // TODO: Implement API call to save mining data
-    toast.success('Mining data saved successfully!');
-    navigate('/dashboard');
+    
+    if (!formData.mine_id) {
+      toast.error('Please select a mine');
+      return;
+    }
+
+    setCalculating(true);
+    try {
+      // First calculate emissions
+      const { total_emissions } = await calculateEmissionsFromOperations(formData);
+      
+      // Save the emission record
+      await emissionService.createEmission({
+        mine_id: formData.mine_id,
+        date: formData.date,
+        coal_output: formData.excavationData.materialVolume * COAL_DENSITY_FACTOR,
+        electricity_usage: parseFloat(formData.equipmentData.energyConsumption) + 
+                         parseFloat(formData.energyConsumption.electricity),
+        fuel_consumption: parseFloat(formData.excavationData.fuelConsumption) + 
+                        parseFloat(formData.transportationData.fuelConsumption) + 
+                        parseFloat(formData.energyConsumption.diesel) + 
+                        parseFloat(formData.energyConsumption.other),
+        methane_leaks: formData.excavationData.materialVolume * METHANE_EMISSION_FACTOR,
+        stockpile_emissions: parseFloat(formData.wasteManagement.wasteRock) * WASTE_EMISSION_FACTOR
+      });
+
+      // Save detailed mining operation data
+      await miningOperationService.createOperation({
+        mine_id: formData.mine_id,
+        date: formData.date,
+        excavationData: formData.excavationData,
+        transportationData: formData.transportationData,
+        equipmentData: formData.equipmentData,
+        energyConsumption: formData.energyConsumption,
+        wasteManagement: formData.wasteManagement
+      });
+
+      toast.success('Mining data and emissions saved successfully!');
+      navigate('/dashboard');
+    } catch (error) {
+      toast.error('Failed to save data');
+    } finally {
+      setCalculating(false);
+    }
   };
 
   return (
@@ -71,6 +158,24 @@ export default function DataEntry() {
           </div>
 
           <form onSubmit={handleSubmit} className="px-6 py-5 space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Select Mine</label>
+              <select
+                name="mine_id"
+                value={formData.mine_id}
+                onChange={handleChange}
+                required
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
+              >
+                <option value="">Select a mine...</option>
+                {mines.map(mine => (
+                  <option key={mine.id} value={mine.id}>
+                    {mine.name} - {mine.location}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-700">Date of Operation</label>
               <input
@@ -285,19 +390,55 @@ export default function DataEntry() {
               </div>
             </div>
 
+            {/* Display calculated emissions if available */}
+            {calculatedEmissions && (
+              <div className="bg-green-50 border border-green-200 rounded-md p-4">
+                <h4 className="text-lg font-medium text-green-800 mb-2">
+                  Calculated Emissions
+                </h4>
+                <p className="text-green-700">
+                  Total CO2 Emissions: {calculatedEmissions.total_emissions.toFixed(2)} tons CO2e
+                </p>
+              </div>
+            )}
+
             <div className="flex justify-end space-x-4">
               <button
                 type="button"
-                onClick={() => navigate('/dashboard')}
+                onClick={() => {
+                  if (window.confirm('Are you sure you want to cancel? All entered data will be lost.')) {
+                    navigate('/dashboard');
+                  }
+                }}
                 className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
               >
                 Cancel
               </button>
               <button
-                type="submit"
-                className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                type="button"
+                onClick={async () => {
+                  setCalculating(true);
+                  try {
+                    const result = await calculateEmissionsFromOperations(formData);
+                    setCalculatedEmissions(result);
+                    toast.success('Emissions calculated successfully');
+                  } catch (error) {
+                    toast.error('Failed to calculate emissions');
+                  } finally {
+                    setCalculating(false);
+                  }
+                }}
+                disabled={calculating}
+                className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
               >
-                Save Data
+                {calculating ? 'Calculating...' : 'Calculate Emissions'}
+              </button>
+              <button
+                type="submit"
+                disabled={calculating}
+                className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
+              >
+                {calculating ? 'Saving...' : 'Save Data'}
               </button>
             </div>
           </form>

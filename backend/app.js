@@ -4,6 +4,7 @@ require('./config/database'); // Initialize database
 const userRoutes = require('./routes/users');
 const mineRoutes = require('./routes/mines');
 const emissionRoutes = require('./routes/emissions');
+const miningOperationRoutes = require('./routes/mining-operations');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -16,6 +17,7 @@ app.use(express.json());
 app.use('/api/users', userRoutes);
 app.use('/api/mines', mineRoutes);
 app.use('/api/emissions', emissionRoutes);
+app.use('/api/mining-operations', miningOperationRoutes);
 
 // Health check route
 app.get('/', (req, res) => {
